@@ -7,7 +7,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import 'package:provider/provider.dart';
-
+import '../core/route_trim.dart';
 import '../core/api.dart';
 import '../core/api_ext.dart';
 import '../core/config.dart';
@@ -554,96 +554,120 @@ class _ScenePainter extends CustomPainter {
   }
 
 
-    // -------------------------------------------------------------- routes réelles (nuage + trait net)
+  // -------------------------------------------------------------- routes réelles (nuage + trait net)
   static Object? _rkSegs, _rkStates;
   static List<double>? _rkCam;
-  static Map<int, Path>? _rkBuckets;
+  static bool? _rkDark, _rkCloud;
+  static ui.Picture? _rkPic;
 
-  Map<int, Path> _roadBuckets(_Proj pr, Size size) {
+  /// Courbe lissée passant par les extrémités exactes (la connexion avec le tronçon voisin est conservée).
+  static void _smooth(Path path, List<Offset> o) {
+    if (o.length < 2) return;
+    path.moveTo(o[0].dx, o[0].dy);
+    if (o.length == 2) {
+      path.lineTo(o[1].dx, o[1].dy);
+      return;
+    }
+    path.lineTo((o[0].dx + o[1].dx) / 2, (o[0].dy + o[1].dy) / 2);
+    for (var i = 1; i < o.length - 1; i++) {
+      path.quadraticBezierTo(o[i].dx, o[i].dy, (o[i].dx + o[i + 1].dx) / 2, (o[i].dy + o[i + 1].dy) / 2);
+    }
+    path.lineTo(o.last.dx, o.last.dy);
+  }
+
+  Color _roadColor(double db) {
+    if (s.dark) return noiseHeat(db, glow: true);
+    final x = ((db - 35) / 5).clamp(0.0, 9.0).toDouble();
+    final i = x.floor().clamp(0, 8);
+    return Color.lerp(Color.lerp(_bandColors[i], _bandColors[i + 1], x - i)!, const Color(0xFF1E293B), 0.14)!;
+  }
+
+  ui.Picture _roadPicture(_Proj pr, Size size, Rect clip) {
     final cam = [camera.center.latitude, camera.center.longitude, camera.zoom, size.width, size.height];
+    final cloud = s.mode == _NoiseMode.cloud;
     bool same() {
       final k = _rkCam;
-      if (k == null || !identical(_rkSegs, s.roads) || !identical(_rkStates, s.roadStates)) return false;
+      if (k == null || _rkPic == null || !identical(_rkSegs, s.roads) || !identical(_rkStates, s.roadStates)) return false;
+      if (_rkDark != s.dark || _rkCloud != cloud) return false;
       for (var i = 0; i < cam.length; i++) {
         if (k[i] != cam[i]) return false;
       }
       return true;
     }
 
-    if (same() && _rkBuckets != null) return _rkBuckets!;
+    if (same()) return _rkPic!;
+
     final vb = camera.visibleBounds;
     const m = 0.002;
-    final out = <int, Path>{};
+    final buckets = <int, Path>{};
     for (final seg in s.roads) {
-      if (seg.maxLat < vb.south - m || seg.minLat > vb.north + m || seg.maxLon < vb.west - m || seg.minLon > vb.east + m) {
-        continue;
-      }
+      if (seg.maxLat < vb.south - m || seg.minLat > vb.north + m || seg.maxLon < vb.west - m || seg.minLon > vb.east + m) continue;
       final st = s.roadStates[seg.id];
-      final ci = (st == null || !st.hasData) ? 0 : 1 + ((st.laeq - 35) / 5).floor().clamp(0, 11).toInt();
+      final ci = (st == null || !st.hasData) ? 0 : 1 + ((st.laeq - 35) / 2).round().clamp(0, 40).toInt();
       final wc = seg.rank <= 2 ? 0 : (seg.rank <= 4 ? 1 : 2);
-      final path = out.putIfAbsent(ci * 3 + wc, () => Path());
-      for (var i = 0; i < seg.points.length; i++) {
-        final o = pr.at(seg.points[i].latitude, seg.points[i].longitude);
-        i == 0 ? path.moveTo(o.dx, o.dy) : path.lineTo(o.dx, o.dy);
-      }
+      _smooth(buckets.putIfAbsent(ci * 3 + wc, () => Path()), [for (final p in seg.points) pr.at(p.latitude, p.longitude)]);
     }
-    _rkSegs = s.roads;
-    _rkStates = s.roadStates;
-    _rkCam = cam;
-    _rkBuckets = out;
-    return out;
-  }
 
-  void _roads(Canvas canvas, _Proj pr, Size size, Rect clip) {
-    if (s.roads.isEmpty) return;
-    final buckets = _roadBuckets(pr, size);
-    if (buckets.isEmpty) return;
-    final keys = buckets.keys.toList()..sort();
     final z = camera.zoom;
-    final base = (1.4 + (z - 11) * 0.45).clamp(1.4, 6.5).toDouble();
-    double wOf(int wc) => base * (wc == 0 ? 1.7 : wc == 1 ? 1.25 : 1.0);
-    Color cOf(int ci) => ci == 0 ? const Color(0xFF22C55E) : noiseColor(37.5 + 5.0 * (ci - 1));
+    final base = (0.9 + (z - 11) * 0.32).clamp(0.9, 4.0).toDouble();
+    double wOf(int wc) => base * (wc == 0 ? 1.5 : wc == 1 ? 1.15 : 0.85);
+    final keys = buckets.keys.toList()..sort();
+    final rec = ui.PictureRecorder();
+    final c = Canvas(rec, clip);
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    if (s.mode == _NoiseMode.cloud) {
-      final sigma = max(3.0, base * 1.6);
-      canvas.saveLayer(
-        clip,
-        Paint()..imageFilter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma, tileMode: ui.TileMode.decal),
-      );
-      for (final k in keys) {
-        final ci = k ~/ 3;
-        paint
-          ..color = cOf(ci).withValues(alpha: ci == 0 ? 0.22 : 0.55)
-          ..strokeWidth = wOf(k % 3) * 3.2;
-        canvas.drawPath(buckets[k]!, paint);
-      }
-      canvas.restore();
+    // halo léger : seulement les routes mesurées
+    final sigma = max(2.0, base * 1.2);
+    c.saveLayer(clip, Paint()..imageFilter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma, tileMode: ui.TileMode.decal));
+    for (final k in keys) {
+      final ci = k ~/ 3;
+      if (ci == 0) continue;
+      paint
+        ..color = _roadColor(35 + 2.0 * (ci - 1)).withValues(alpha: cloud ? 0.30 : 0.20)
+        ..strokeWidth = wOf(k % 3) * 2.6;
+      c.drawPath(buckets[k]!, paint);
     }
+    c.restore();
+
+    // trait fin : non mesuré = vert très discret, mesuré = couleur continue
     for (final k in keys) {
       final ci = k ~/ 3;
       paint
-        ..color = cOf(ci).withValues(alpha: ci == 0 ? 0.55 : 0.95)
-        ..strokeWidth = wOf(k % 3);
-      canvas.drawPath(buckets[k]!, paint);
+        ..color = ci == 0 ? const Color(0xFF6FCF97).withValues(alpha: 0.28) : _roadColor(35 + 2.0 * (ci - 1)).withValues(alpha: 0.72)
+        ..strokeWidth = wOf(k % 3) * (ci == 0 ? 0.7 : 0.85);
+      c.drawPath(buckets[k]!, paint);
     }
 
+    _rkPic?.dispose();
+    _rkPic = rec.endRecording();
+    _rkSegs = s.roads;
+    _rkStates = s.roadStates;
+    _rkCam = cam;
+    _rkDark = s.dark;
+    _rkCloud = cloud;
+    return _rkPic!;
+  }
+
+  void _roads(Canvas canvas, _Proj pr, Size size, Rect clip) {
+    if (s.roads.isEmpty) return;
+    canvas.drawPicture(_roadPicture(pr, size, clip));
     final sel = s.selectedRoad;
-    if (sel != null) {
-      for (final seg in s.roads) {
-        if (seg.id != sel) continue;
-        final path = Path();
-        for (var i = 0; i < seg.points.length; i++) {
-          final o = pr.at(seg.points[i].latitude, seg.points[i].longitude);
-          i == 0 ? path.moveTo(o.dx, o.dy) : path.lineTo(o.dx, o.dy);
-        }
-        canvas.drawPath(path, paint..color = Colors.black54..strokeWidth = base * 2.6 + 4);
-        canvas.drawPath(path, paint..color = Colors.white..strokeWidth = base * 2.6);
-        break;
-      }
+    if (sel == null) return;
+    final base = (0.9 + (camera.zoom - 11) * 0.32).clamp(0.9, 4.0).toDouble();
+    for (final seg in s.roads) {
+      if (seg.id != sel) continue;
+      final path = Path();
+      _smooth(path, [for (final p in seg.points) pr.at(p.latitude, p.longitude)]);
+      final line = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+      canvas.drawPath(path, line..color = Colors.black45..strokeWidth = base * 2.2 + 3);
+      canvas.drawPath(path, line..color = Colors.white..strokeWidth = base * 2.2);
+      break;
     }
   }
 
@@ -1288,12 +1312,19 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
       }
     }
     if (!mounted) return;
+    final t = trimRoute(mr.points, target, m.radiusM);
+    final trimmed = MissionRoute(
+        missionId: mr.missionId,
+        target: mr.target,
+        points: t.points,
+        lengthM: (mr.lengthM * t.ratio).round(),
+        timeS: (mr.timeS * t.ratio).round());
     setState(() {
-      _mRoute = mr;
+      _mRoute = trimmed;
       _route = null;
     });
     _map.fitCamera(CameraFit.bounds(
-      bounds: LatLngBounds.fromPoints([...mr.points, target]),
+      bounds: LatLngBounds.fromPoints([...trimmed.points, target]),
       padding: const EdgeInsets.fromLTRB(40, 170, 40, 200),
     ));
     _reload();

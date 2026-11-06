@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../core/notifier.dart';
 import '../state/proposals_controller.dart';
 import '../state/recorder_controller.dart';
+import 'data_home_screen.dart';
 import 'history_screen.dart';
 import 'map_screen.dart';
 import 'profile_screen.dart';
@@ -70,7 +71,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: _i, children: const [MapScreen(), HistoryScreen(), ProfileScreen()]),
+      body: IndexedStack(index: _i, children: const [MapScreen(), HistoryScreen(), DataHomeScreen(), ProfileScreen()]),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openRecord,
         icon: const Icon(Icons.graphic_eq_rounded),
@@ -81,16 +82,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         selectedIndex: _i,
         onDestinationSelected: (v) => setState(() => _i = v),
         destinations: const [
-          NavigationDestination(
-              icon: Icon(Icons.map_outlined), selectedIcon: Icon(Icons.map_rounded), label: 'Carte'),
-          NavigationDestination(
-              icon: Icon(Icons.history_rounded),
-              selectedIcon: Icon(Icons.history_toggle_off_rounded),
-              label: 'Mesures'),
-          NavigationDestination(
-              icon: Icon(Icons.person_outline_rounded),
-              selectedIcon: Icon(Icons.person_rounded),
-              label: 'Moi'),
+          NavigationDestination(icon: Icon(Icons.map_outlined), selectedIcon: Icon(Icons.map_rounded), label: 'Carte'),
+          NavigationDestination(icon: Icon(Icons.history_rounded), selectedIcon: Icon(Icons.history_toggle_off_rounded), label: 'Mesures'),
+          NavigationDestination(icon: Icon(Icons.dataset_outlined), selectedIcon: Icon(Icons.dataset_rounded), label: 'Données'),
+          NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: 'Moi'),
         ],
       ),
     );

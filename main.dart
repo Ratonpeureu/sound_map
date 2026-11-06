@@ -16,6 +16,8 @@ import 'state/reviews_controller.dart';
 import 'state/session_controller.dart';
 import 'state/tomtom_view_model.dart';
 import 'state/view_models.dart';
+import 'state/data_hub.dart';
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,6 +40,7 @@ Future<void> main() async {
   final missions = MissionsController(api, session, notifier);
   final account = AccountController(api, session);
   final reviews = ReviewsController(api, session, notifier, account);
+  final dataHub = DataHub(api, session);
 
   runApp(MultiProvider(
     providers: [
@@ -54,6 +57,8 @@ Future<void> main() async {
       ChangeNotifierProvider<RoadsViewModel>.value(value: roads),
       ChangeNotifierProvider<AccountController>.value(value: account),
       ChangeNotifierProvider<ReviewsController>.value(value: reviews),
+      ChangeNotifierProvider<DataHub>.value(value: dataHub),
+
     ],
     child: const SunuApp(),
   ));

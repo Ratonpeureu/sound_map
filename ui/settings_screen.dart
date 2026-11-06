@@ -126,6 +126,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const Divider(height: 1),
             SwitchListTile(
+              secondary: const Icon(Icons.assignment_rounded),
+              title: const Text('Enquêtes (Sunu Données)'),
+              subtitle: const Text('Vos réponses sont anonymisées et agrégées par zone.'),
+              value: s.consentOf('survey_data'),
+              onChanged: (v) => _run(() => s.setConsent('survey_data', v)),
+            ),
+            const Divider(height: 1),
+            SwitchListTile(
+              secondary: const Icon(Icons.photo_camera_rounded),
+              title: const Text('Photos de preuve'),
+              subtitle: const Text('Conservées 90 jours, vues uniquement par les administrateurs.'),
+              value: s.consentOf('photo'),
+              onChanged: (v) => _run(() => s.setConsent('photo', v)),
+            ),
+            const Divider(height: 1),
+            SwitchListTile(
               secondary: const Icon(Icons.pause_circle_outline_rounded),
               title: const Text('Mettre ma participation en pause'),
               value: u.participationPaused,

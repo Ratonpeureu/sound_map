@@ -21,7 +21,7 @@ import 'reviews_screen.dart';
 import 'schedule_screen.dart';
 import 'settings_screen.dart';
 import 'widgets.dart';
-
+import 'my_responses_screen.dart';
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
   @override
@@ -182,6 +182,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SectionTitle('Analyseur'),
             const _AnalystCard(),
+
+            const SectionTitle('Enquêtes'),
+            SoftCard(
+              padding: EdgeInsets.zero,
+              child: ListTile(
+                leading: const Icon(Icons.assignment_rounded),
+                title: const Text('Mes réponses aux enquêtes'),
+                subtitle: const Text('Statuts, fiabilité et photos à ajouter'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyResponsesScreen())),
+              ),
+            ),
 
             const SectionTitle('Invitations'),
             const _InviteCard(),

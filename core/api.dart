@@ -10,9 +10,10 @@ import 'config.dart';
 import 'models.dart';
 
 class ApiException implements Exception {
-  ApiException(this.status, this.code);
+  ApiException(this.status, this.code, [this.detail]);
   final int? status;
   final String code;
+  final dynamic detail; // corps `detail` quand le backend renvoie un objet (règles d'incohérence, questions manquantes…)
   @override
   String toString() => 'ApiException($status, $code)';
 }
@@ -117,14 +118,19 @@ class ApiClient {
     if (res == null) return ApiException(null, 'network');
     final data = res.data;
     String code;
+    dynamic extra;
     if (data is Map && data['detail'] is String) {
       code = data['detail'] as String;
+    } else if (data is Map && data['detail'] is Map) {
+      final d = data['detail'] as Map;
+      code = (d['code'] as String?) ?? 'validation_error';
+      extra = d;
     } else if (data is Map && data['detail'] is List) {
       code = 'validation_error';
     } else {
       code = 'http_${res.statusCode}';
     }
-    return ApiException(res.statusCode, code);
+    return ApiException(res.statusCode, code, extra);
   }
 
   Future<dynamic> _req(String method, String path,
@@ -141,6 +147,16 @@ class ApiClient {
   /// Appel générique (utilisé par api_ext.dart).
   Future<dynamic> call(String method, String path, {Object? data, Map<String, dynamic>? query}) =>
       _req(method, path, data: data, query: query);
+    
+  Future<dynamic> postForm(String path, FormData form) async {
+    try {
+      final r = await _dio.post(path,
+          data: form, options: Options(sendTimeout: const Duration(seconds: 60), receiveTimeout: const Duration(seconds: 60)));
+      return r.data;
+    } on DioException catch (e) {
+      throw _wrap(e);
+    }
+  }
 
   // ------------------------------------------------------------------ auth
   Future<void> login(String email, String password) async {
@@ -301,7 +317,7 @@ class ApiClient {
   Future<OsrmRoute> getOsrmRoute(LatLng from, LatLng to, {String profile = 'driving'}) async {
     final baseUrl = 'https://router.project-osrm.org/route/v1';
     final coords = '${from.longitude},${from.latitude};${to.longitude},${to.latitude}';
-    final uri = Uri.parse('$baseUrl/$profile/$coords?geometries=geojson&overview=full');
+    final uri = Uri.parse('$baseUrl/$profile/$coords?geometries=geojson&overview=full&alternatives=false&continue_straight=false');
 
     final response = await http.get(uri).timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) throw ApiException(response.statusCode, 'osrm_error');

@@ -25,6 +25,12 @@ IconData guideIcon(String? n) => switch (n) {
       'person' => Icons.person_rounded,
       'admin' => Icons.admin_panel_settings_rounded,
       'help' => Icons.help_rounded,
+      'dataset' => Icons.dataset_rounded,
+      'assignment' => Icons.assignment_rounded,
+      'psychology' => Icons.psychology_rounded,
+      'fact_check' => Icons.fact_check_rounded,
+      'shield_person' => Icons.shield_rounded,
+      'layers' => Icons.layers_rounded,
       _ => Icons.menu_book_rounded,
     };
 
