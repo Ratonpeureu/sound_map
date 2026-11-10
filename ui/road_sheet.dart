@@ -27,11 +27,16 @@ class _RoadSheetState extends State<RoadSheet> {
     return SafeArea(
       child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(20, 0, 20, 24), children: [
         Row(children: [
-          Icon(Icons.add_road_rounded, color: cs.primary, size: 30),
-          const SizedBox(width: 10),
-          Expanded(child: Text(s.title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 19))),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(14)),
+            child: Icon(Icons.add_road_rounded, color: cs.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Text(s.title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 19, letterSpacing: -0.2))),
         ]),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Wrap(spacing: 8, runSpacing: 6, children: [
           StatusChip(roadClassLabel(s.highway), cs.primary),
           if (s.ref != null) StatusChip(s.ref!, cs.onSurfaceVariant),
@@ -50,17 +55,33 @@ class _RoadSheetState extends State<RoadSheet> {
             }
             final d = snap.data!;
             final st = d.state;
-            final col = st.hasData ? noiseColor(st.laeq) : const Color(0xFF22C55E);
+            final col = st.hasData ? noiseColor(st.laeq) : cs.onSurfaceVariant;
             return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const SizedBox(height: 16),
               if (st.hasData) ...[
                 Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Text(st.laeq.toStringAsFixed(1), style: TextStyle(fontSize: 48, fontWeight: FontWeight.w800, color: col, height: 1)),
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: st.laeq),
+                    duration: const Duration(milliseconds: 700),
+                    curve: Curves.easeOutCubic,
+                    builder: (_, v, __) => Text(v.toStringAsFixed(1), style: TextStyle(fontSize: 48, fontWeight: FontWeight.w800, color: col, height: 1)),
+                  ),
                   const Padding(padding: EdgeInsets.only(left: 6, bottom: 6), child: Text('dB(A)', style: TextStyle(fontWeight: FontWeight.w700))),
                   const Spacer(),
                   StatusChip(noiseLabel(st.laeq), col),
                 ]),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
+                // jauge de position sur l'échelle 35 → 95 dB(A)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: ((st.laeq - 35) / 60).clamp(0.04, 1.0).toDouble()),
+                    duration: const Duration(milliseconds: 800),
+                    curve: Curves.easeOutCubic,
+                    builder: (_, v, __) => LinearProgressIndicator(minHeight: 9, value: v, color: col, backgroundColor: cs.outlineVariant.withValues(alpha: 0.3)),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Wrap(spacing: 8, runSpacing: 6, children: [
                   StatusChip('${st.count} mesure(s)', cs.primary, icon: Icons.straighten_rounded),
                   StatusChip('${st.devices} contributeur(s)', cs.primary, icon: Icons.people_alt_rounded),
@@ -72,11 +93,11 @@ class _RoadSheetState extends State<RoadSheet> {
               ] else
                 SoftCard(
                   child: Row(children: [
-                    const Icon(Icons.eco_rounded, color: Color(0xFF22C55E), size: 30),
+                    Icon(Icons.sensors_off_rounded, color: cs.onSurfaceVariant, size: 30),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                          'Pas encore mesurée (ou pas assez de contributeurs). Elle est affichée en vert, le niveau de base : cela ne veut pas dire qu\'elle est silencieuse. Une mission « route » peut vous la proposer.',
+                          'Pas encore mesurée (ou pas assez de contributeurs). Elle est tracée en gris discret : cela ne veut pas dire qu\'elle est silencieuse. Une mission « route » peut vous la proposer.',
                           style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13, height: 1.35)),
                     ),
                   ]),

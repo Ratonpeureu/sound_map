@@ -555,118 +555,190 @@ class _ScenePainter extends CustomPainter {
 
 
   // -------------------------------------------------------------- routes réelles (nuage + trait net)
+  // -------------------------------------------------------------- routes réelles (dessin en cache + courbes douces)
+  // Le dessin est enregistré une fois en coordonnées « monde » puis simplement déplacé / mis à l'échelle
+  // pendant le pan et le zoom : plus de reconstruction à chaque frame.
   static Object? _rkSegs, _rkStates;
-  static List<double>? _rkCam;
-  static bool? _rkDark, _rkCloud;
   static ui.Picture? _rkPic;
+  static double _rkZoom = 0;
+  static List<double>? _rkArea; // sud, ouest, nord, est
+  static bool? _rkDark, _rkCloud;
 
-  /// Courbe lissée passant par les extrémités exactes (la connexion avec le tronçon voisin est conservée).
-  static void _smooth(Path path, List<Offset> o) {
-    if (o.length < 2) return;
-    path.moveTo(o[0].dx, o[0].dy);
-    if (o.length == 2) {
-      path.lineTo(o[1].dx, o[1].dy);
-      return;
-    }
-    path.lineTo((o[0].dx + o[1].dx) / 2, (o[0].dy + o[1].dy) / 2);
-    for (var i = 1; i < o.length - 1; i++) {
-      path.quadraticBezierTo(o[i].dx, o[i].dy, (o[i].dx + o[i + 1].dx) / 2, (o[i].dy + o[i + 1].dy) / 2);
-    }
-    path.lineTo(o.last.dx, o.last.dy);
+  static double _wx(double lon, double z) => (lon + 180) / 360 * 256.0 * pow(2.0, z).toDouble();
+
+  static double _wy(double lat, double z) {
+    final s = sin(lat * pi / 180).clamp(-0.9999, 0.9999).toDouble();
+    return (0.5 - log((1 + s) / (1 - s)) / (4 * pi)) * 256.0 * pow(2.0, z).toDouble();
   }
 
+  /// Courbe Catmull-Rom → Bézier : passe exactement par les extrémités (la jonction avec le tronçon voisin est conservée).
+  static void _curve(Path path, List<Offset> p) {
+    path.moveTo(p[0].dx, p[0].dy);
+    if (p.length == 2) {
+      path.lineTo(p[1].dx, p[1].dy);
+      return;
+    }
+    for (var i = 0; i < p.length - 1; i++) {
+      final p0 = i == 0 ? p[0] : p[i - 1];
+      final p1 = p[i], p2 = p[i + 1];
+      final p3 = i + 2 < p.length ? p[i + 2] : p[i + 1];
+      path.cubicTo(
+        p1.dx + (p2.dx - p0.dx) / 6, p1.dy + (p2.dy - p0.dy) / 6,
+        p2.dx - (p3.dx - p1.dx) / 6, p2.dy - (p3.dy - p1.dy) / 6,
+        p2.dx, p2.dy,
+      );
+    }
+  }
+
+  /// Points en coordonnées monde, allégés (inutile de garder des points à moins de 1,6 px les uns des autres).
+  static List<Offset> _pts(RoadSeg seg, double z, double minD) {
+    if (seg.points.length < 2) return const [];
+    final out = <Offset>[];
+    final lastP = seg.points.last;
+    final lastO = Offset(_wx(lastP.longitude, z), _wy(lastP.latitude, z));
+    for (final p in seg.points) {
+      final o = Offset(_wx(p.longitude, z), _wy(p.latitude, z));
+      if (out.isEmpty || (o - out.last).distanceSquared >= minD * minD) out.add(o);
+    }
+    if (out.length == 1) {
+      out.add(lastO);
+    } else if (out.last != lastO) {
+      if ((lastO - out.last).distance < minD) {
+        out[out.length - 1] = lastO;
+      } else {
+        out.add(lastO);
+      }
+    }
+    return out;
+  }
+
+  /// Même rampe que le nuage de bruit, légèrement assombrie pour rester lisible sur fond clair.
   Color _roadColor(double db) {
     if (s.dark) return noiseHeat(db, glow: true);
     final x = ((db - 35) / 5).clamp(0.0, 9.0).toDouble();
     final i = x.floor().clamp(0, 8);
-    return Color.lerp(Color.lerp(_bandColors[i], _bandColors[i + 1], x - i)!, const Color(0xFF1E293B), 0.14)!;
+    return Color.lerp(Color.lerp(_bandColors[i], _bandColors[i + 1], x - i)!, const Color(0xFF1E293B), 0.22)!;
   }
 
-  ui.Picture _roadPicture(_Proj pr, Size size, Rect clip) {
-    final cam = [camera.center.latitude, camera.center.longitude, camera.zoom, size.width, size.height];
-    final cloud = s.mode == _NoiseMode.cloud;
-    bool same() {
-      final k = _rkCam;
-      if (k == null || _rkPic == null || !identical(_rkSegs, s.roads) || !identical(_rkStates, s.roadStates)) return false;
-      if (_rkDark != s.dark || _rkCloud != cloud) return false;
-      for (var i = 0; i < cam.length; i++) {
-        if (k[i] != cam[i]) return false;
-      }
-      return true;
-    }
+  double _roadBase(double z) => (0.8 + (z - 11) * 0.34).clamp(0.8, 4.2).toDouble();
 
-    if (same()) return _rkPic!;
-
+  bool _roadsStale(double z) {
+    final a = _rkArea;
+    if (_rkPic == null || a == null) return true;
+    if (!identical(_rkSegs, s.roads) || !identical(_rkStates, s.roadStates)) return true;
+    if (_rkDark != s.dark || _rkCloud != (s.mode == _NoiseMode.cloud)) return true;
+    if ((z - _rkZoom).abs() > 0.45) return true;
     final vb = camera.visibleBounds;
-    const m = 0.002;
-    final buckets = <int, Path>{};
+    return vb.south < a[0] || vb.west < a[1] || vb.north > a[2] || vb.east > a[3];
+  }
+
+  ui.Picture _buildRoads(double z) {
+    final vb = camera.visibleBounds;
+    final dLat = (vb.north - vb.south) * 0.6, dLon = (vb.east - vb.west) * 0.6;
+    final area = [vb.south - dLat, vb.west - dLon, vb.north + dLat, vb.east + dLon];
+    const minD = 1.6;
+
+    final quiet = <int, Path>{}; // non mesuré : par classe de largeur
+    final live = <int, Path>{}; // mesuré : (niveau dB arrondi) * 3 + classe
     for (final seg in s.roads) {
-      if (seg.maxLat < vb.south - m || seg.minLat > vb.north + m || seg.maxLon < vb.west - m || seg.minLon > vb.east + m) continue;
+      if (seg.maxLat < area[0] || seg.minLat > area[2] || seg.maxLon < area[1] || seg.minLon > area[3]) continue;
       final st = s.roadStates[seg.id];
-      final ci = (st == null || !st.hasData) ? 0 : 1 + ((st.laeq - 35) / 2).round().clamp(0, 40).toInt();
+      final has = st?.hasData ?? false;
+      if (!has) {
+        // les petites rues non mesurées n'apparaissent qu'en zoom serré : la carte respire
+        if (seg.rank >= 6 && z < 14.8) continue;
+        if (seg.rank == 5 && z < 13.6) continue;
+      }
+      final pts = _pts(seg, z, minD);
+      if (pts.length < 2) continue;
       final wc = seg.rank <= 2 ? 0 : (seg.rank <= 4 ? 1 : 2);
-      _smooth(buckets.putIfAbsent(ci * 3 + wc, () => Path()), [for (final p in seg.points) pr.at(p.latitude, p.longitude)]);
+      if (has) {
+        final ci = 1 + (st!.laeq - 35).round().clamp(0, 60).toInt();
+        _curve(live.putIfAbsent(ci * 3 + wc, () => Path()), pts);
+      } else {
+        _curve(quiet.putIfAbsent(wc, () => Path()), pts);
+      }
     }
 
-    final z = camera.zoom;
-    final base = (0.9 + (z - 11) * 0.32).clamp(0.9, 4.0).toDouble();
-    double wOf(int wc) => base * (wc == 0 ? 1.5 : wc == 1 ? 1.15 : 0.85);
-    final keys = buckets.keys.toList()..sort();
+    final base = _roadBase(z);
+    final cloud = s.mode == _NoiseMode.cloud;
     final rec = ui.PictureRecorder();
-    final c = Canvas(rec, clip);
-    final paint = Paint()
+    final c = Canvas(rec);
+    final p = Paint()
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    // halo léger : seulement les routes mesurées
-    final sigma = max(2.0, base * 1.2);
-    c.saveLayer(clip, Paint()..imageFilter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma, tileMode: ui.TileMode.decal));
-    for (final k in keys) {
-      final ci = k ~/ 3;
-      if (ci == 0) continue;
-      paint
-        ..color = _roadColor(35 + 2.0 * (ci - 1)).withValues(alpha: cloud ? 0.30 : 0.20)
-        ..strokeWidth = wOf(k % 3) * 2.6;
-      c.drawPath(buckets[k]!, paint);
-    }
-    c.restore();
-
-    // trait fin : non mesuré = vert très discret, mesuré = couleur continue
-    for (final k in keys) {
-      final ci = k ~/ 3;
-      paint
-        ..color = ci == 0 ? const Color(0xFF6FCF97).withValues(alpha: 0.28) : _roadColor(35 + 2.0 * (ci - 1)).withValues(alpha: 0.72)
-        ..strokeWidth = wOf(k % 3) * (ci == 0 ? 0.7 : 0.85);
-      c.drawPath(buckets[k]!, paint);
+    // 1) réseau non mesuré : gris-ardoise très discret, hiérarchie par la largeur
+    final qCol = s.dark ? const Color(0xFFB6C4D2) : const Color(0xFF5B6B7B);
+    const qAlphaLight = [0.30, 0.22, 0.15];
+    const qAlphaDark = [0.22, 0.16, 0.11];
+    const qW = [1.0, 0.7, 0.5];
+    for (var wc = 0; wc < 3; wc++) {
+      final path = quiet[wc];
+      if (path == null) continue;
+      p
+        ..color = qCol.withValues(alpha: s.dark ? qAlphaDark[wc] : qAlphaLight[wc])
+        ..strokeWidth = max(0.6, base * qW[wc]);
+      c.drawPath(path, p);
     }
 
-    _rkPic?.dispose();
-    _rkPic = rec.endRecording();
+    // 2) routes mesurées : halo léger (sans flou coûteux) puis trait net, du plus calme au plus bruyant
+    const lW = [1.7, 1.2, 0.85];
+    final keys = live.keys.toList()..sort();
+    for (final k in keys) {
+      final col = _roadColor(35 + (k ~/ 3 - 1).toDouble());
+      p
+        ..color = col.withValues(alpha: cloud ? 0.20 : 0.14)
+        ..strokeWidth = base * lW[k % 3] * 2.8;
+      c.drawPath(live[k]!, p);
+    }
+    for (final k in keys) {
+      final col = _roadColor(35 + (k ~/ 3 - 1).toDouble());
+      p
+        ..color = col.withValues(alpha: 0.92)
+        ..strokeWidth = base * lW[k % 3] * 1.05;
+      c.drawPath(live[k]!, p);
+    }
+
     _rkSegs = s.roads;
     _rkStates = s.roadStates;
-    _rkCam = cam;
+    _rkZoom = z;
+    _rkArea = area;
     _rkDark = s.dark;
     _rkCloud = cloud;
-    return _rkPic!;
+    return rec.endRecording();
   }
 
   void _roads(Canvas canvas, _Proj pr, Size size, Rect clip) {
     if (s.roads.isEmpty) return;
-    canvas.drawPicture(_roadPicture(pr, size, clip));
+    final z = camera.zoom;
+    if (_roadsStale(z)) _rkPic = _buildRoads(z);
+
+    // le dessin est en « pixels monde » au zoom de construction : on le recale sur la caméra courante
+    final k = pow(2.0, z - _rkZoom).toDouble();
+    canvas.save();
+    canvas.translate(size.width / 2, size.height / 2);
+    canvas.scale(k);
+    canvas.translate(-_wx(camera.center.longitude, _rkZoom), -_wy(camera.center.latitude, _rkZoom));
+    canvas.drawPicture(_rkPic!);
+    canvas.restore();
+
     final sel = s.selectedRoad;
     if (sel == null) return;
-    final base = (0.9 + (camera.zoom - 11) * 0.32).clamp(0.9, 4.0).toDouble();
+    final w = _roadBase(z) * 2.2;
     for (final seg in s.roads) {
       if (seg.id != sel) continue;
+      final o = [for (final p in seg.points) pr.at(p.latitude, p.longitude)];
+      if (o.length < 2) break;
       final path = Path();
-      _smooth(path, [for (final p in seg.points) pr.at(p.latitude, p.longitude)]);
+      _curve(path, o);
       final line = Paint()
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round;
-      canvas.drawPath(path, line..color = Colors.black45..strokeWidth = base * 2.2 + 3);
-      canvas.drawPath(path, line..color = Colors.white..strokeWidth = base * 2.2);
+      canvas.drawPath(path, line..color = Colors.black45..strokeWidth = w + 3);
+      canvas.drawPath(path, line..color = Colors.white..strokeWidth = w);
       break;
     }
   }
@@ -1433,7 +1505,7 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
                 contentPadding: EdgeInsets.zero,
                 secondary: const Icon(Icons.add_road_rounded),
                 title: const Text('Routes (tracé réel)'),
-                subtitle: const Text('Vert = pas encore mesuré · zoomez pour voir les petites rues'),
+                subtitle: const Text('Gris = pas encore mesuré · zoomez pour voir les petites rues'),
                 value: _showRoads,
                 onChanged: (v) {
                   both(() => _showRoads = v);
@@ -1925,9 +1997,14 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
           Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Container(width: 18, height: 3, decoration: BoxDecoration(color: const Color(0xFF22C55E), borderRadius: BorderRadius.circular(2))),
+              Container(
+                  width: 18,
+                  height: 3,
+                  decoration: BoxDecoration(
+                      color: _darkBase ? const Color(0xFFB6C4D2) : const Color(0xFF5B6B7B),
+                      borderRadius: BorderRadius.circular(2))),
               const SizedBox(width: 6),
-              const Text('Routes · vert = non mesuré', style: TextStyle(fontSize: 9)),
+              const Text('Routes · gris = non mesuré', style: TextStyle(fontSize: 9)),
             ]),
           ),
         Text(_darkBase ? 'Plus clair = plus bruyant' : 'Plus foncé = plus bruyant',
