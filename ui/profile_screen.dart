@@ -21,6 +21,10 @@ import 'reviews_screen.dart';
 import 'schedule_screen.dart';
 import 'settings_screen.dart';
 import 'widgets.dart';
+import '../state/studies_controller.dart';
+import 'studies_screen.dart'; 
+import 'rewards_screen.dart'
+
 import 'my_responses_screen.dart';
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -193,6 +197,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyResponsesScreen())),
               ),
+            ),
+            const SectionTitle('Études et récompenses'),
+            SoftCard(
+              padding: EdgeInsets.zero,
+              child: Column(children: [
+                ListTile(
+                  leading: const Icon(Icons.campaign_rounded),
+                  title: const Text('Études, sondages, enquêtes commerciales'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StudiesScreen())),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.card_giftcard_rounded),
+                  title: const Text('Mes récompenses'),
+                  trailing: context.watch<StudiesController>().claimCount > 0
+                      ? Badge(label: Text('${context.watch<StudiesController>().claimCount}'))
+                      : const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RewardsScreen())),
+                ),
+              ]),
             ),
 
             const SectionTitle('Invitations'),

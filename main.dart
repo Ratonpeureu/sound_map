@@ -17,7 +17,7 @@ import 'state/session_controller.dart';
 import 'state/tomtom_view_model.dart';
 import 'state/view_models.dart';
 import 'state/data_hub.dart';
-
+import 'state/studies_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +41,7 @@ Future<void> main() async {
   final account = AccountController(api, session);
   final reviews = ReviewsController(api, session, notifier, account);
   final dataHub = DataHub(api, session);
+  final studies = StudiesController(api, session, notifier);
 
   runApp(MultiProvider(
     providers: [
@@ -58,6 +59,7 @@ Future<void> main() async {
       ChangeNotifierProvider<AccountController>.value(value: account),
       ChangeNotifierProvider<ReviewsController>.value(value: reviews),
       ChangeNotifierProvider<DataHub>.value(value: dataHub),
+      ChangeNotifierProvider<StudiesController>.value(value: studies),
 
     ],
     child: const SunuApp(),

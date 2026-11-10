@@ -8,6 +8,8 @@ import 'data_map_screen.dart';
 import 'my_responses_screen.dart';
 import 'surveys_screen.dart';
 import 'widgets.dart';
+import '../state/studies_controller.dart'; 
+import 'studies_screen.dart';
 
 class DataHomeScreen extends StatefulWidget {
   const DataHomeScreen({super.key});
@@ -20,6 +22,7 @@ class _DataHomeScreenState extends State<DataHomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => context.read<DataHub>().ensure());
+    context.read<StudiesController>().refresh();
   }
 
   void _openDomain(DataDomain d) {
@@ -207,7 +210,10 @@ class _ChoiceSheet extends StatelessWidget {
             decoration: BoxDecoration(color: domain.color.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(15)),
             child: Icon(domainIcon(domain.icon), color: domain.color),
           ),
+          
           const SizedBox(width: 12),
+          const SizedBox(height: 12),
+          const _StudiesBanner(),
           Expanded(child: Text(domain.label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20))),
         ]),
         const SizedBox(height: 14),
@@ -243,3 +249,37 @@ class _ChoiceSheet extends StatelessWidget {
     );
   }
 }
+
+
+
+
+
+class _StudiesBanner extends StatelessWidget {
+  const _StudiesBanner();
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final sc = context.watch<StudiesController>();
+    const col = Color(0xFF4F46E5);
+    return SoftCard(
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StudiesScreen())),
+      child: Row(children: [
+        Container(width: 46, height: 46, decoration: BoxDecoration(color: col.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(15)), child: const Icon(Icons.campaign_rounded, color: col)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Études, sondages et récompenses', style: TextStyle(fontWeight: FontWeight.w800)),
+            Text(sc.invitedCount > 0 ? '${sc.invitedCount} invitation(s) pour vous' : '${sc.list.length} étude(s) disponible(s)',
+                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12.5)),
+          ]),
+        ),
+        if (sc.invitedCount + sc.claimCount > 0) Badge(label: Text('${sc.invitedCount + sc.claimCount}')),
+        const Icon(Icons.chevron_right_rounded),
+      ]),
+    );
+  }
+}
+
+
+
+

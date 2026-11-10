@@ -147,6 +147,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               value: u.participationPaused,
               onChanged: (v) => _run(() => s.setPaused(v)),
             ),
+            const Divider(height: 1),
+            SwitchListTile(
+              secondary: const Icon(Icons.campaign_rounded),
+              title: const Text('Études et sondages'),
+              subtitle: const Text('Recevoir des études ciblées. Vos réponses ne vont jamais sur la carte.'),
+              value: s.consentOf('study_data'),
+              onChanged: (v) => _run(() => s.setConsent('study_data', v)),
+            ),
           ]),
         ),
 

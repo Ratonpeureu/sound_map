@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart'; // <-- IMPORT AJOUTÉ
 
 import 'config.dart';
 import 'models.dart';
+import 'dart:typed_data';
 
 class ApiException implements Exception {
   ApiException(this.status, this.code, [this.detail]);
@@ -143,6 +144,25 @@ class ApiClient {
       throw _wrap(e);
     }
   }
+
+  String get baseUrl => _dio.options.baseUrl;
+
+  /// Médias protégés (images/vidéos des études) : passent par l'intercepteur (jeton + refresh).
+  Future<Uint8List> getBytes(String path) async {
+    try {
+      final r = await _dio.get<List<int>>(path, options: Options(responseType: ResponseType.bytes));
+      return Uint8List.fromList(r.data ?? const []);
+    } on DioException catch (e) {
+      throw _wrap(e);
+    }
+  }
+
+  Future<void> downloadTo(String path, String savePath) async {
+    try {
+      await _dio.download(path, savePath, options: Options(receiveTimeout: const Duration(minutes: 3)));
+    } on DioException catch (e) {
+      throw _wrap(e);
+    }
 
   /// Appel générique (utilisé par api_ext.dart).
   Future<dynamic> call(String method, String path, {Object? data, Map<String, dynamic>? query}) =>
