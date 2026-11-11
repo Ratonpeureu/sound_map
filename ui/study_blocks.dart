@@ -394,7 +394,7 @@ class BlockView extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3),
                 child: Row(children: [
-                  if (b.criteria.length > 1 || c.value != 'overall') Expanded(flex: 4, child: Text(c.label, style: const TextStyle(fontSize: 13))) else const Spacer(flex: 0),
+                    if (b.criteria.length > 1 || c.value != 'overall') Expanded(flex: 4, child: Text(c.label, style: const TextStyle(fontSize: 13))) else const SizedBox.shrink(),
                   Expanded(
                     flex: 6,
                     child: Wrap(alignment: b.criteria.length > 1 ? WrapAlignment.end : WrapAlignment.start, children: [
@@ -555,10 +555,10 @@ class _RankFieldState extends State<_RankField> {
         physics: const NeverScrollableScrollPhysics(),
         buildDefaultDragHandles: false,
         onReorder: (a, c) {
-          if (c > a) c--;
           setState(() => _order.insert(c, _order.removeAt(a)));
           _emit();
         },
+
         children: [
           for (var i = 0; i < _order.length; i++)
             Opacity(
@@ -575,7 +575,7 @@ class _RankFieldState extends State<_RankField> {
                   title: Text(byVal[_order[i]]?.label ?? _order[i], style: const TextStyle(fontWeight: FontWeight.w700)),
                   trailing: ReorderableDragStartListener(index: i, child: const Icon(Icons.drag_handle_rounded)),
                 ),
-              ),
+              )
             ),
         ],
       ),

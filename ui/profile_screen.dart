@@ -23,7 +23,7 @@ import 'settings_screen.dart';
 import 'widgets.dart';
 import '../state/studies_controller.dart';
 import 'studies_screen.dart'; 
-import 'rewards_screen.dart'
+import 'rewards_screen.dart';
 
 import 'my_responses_screen.dart';
 class ProfileScreen extends StatefulWidget {

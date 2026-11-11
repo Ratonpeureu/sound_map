@@ -163,6 +163,7 @@ class ApiClient {
     } on DioException catch (e) {
       throw _wrap(e);
     }
+  }
 
   /// Appel générique (utilisé par api_ext.dart).
   Future<dynamic> call(String method, String path, {Object? data, Map<String, dynamic>? query}) =>
